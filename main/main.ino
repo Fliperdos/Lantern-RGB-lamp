@@ -1,11 +1,21 @@
 #include <WiFi.h>
+#include <ESPmDNS.h>
+#include <FastLED.h>
+
+#define NUM_LEDS   25
+#define DATA_PIN   4
+#define BRIGHTNESS 128
 
 const char *ssid = "Net4me";
 const char *password = "brousovaubych";
 NetworkServer server(80);
+CRGB leds[NUM_LEDS];
 
 void setup() {
-  pinMode(4, OUTPUT);
+  FastLED.addLeds<WS2812B, DATA_PIN, GRB>(leds, NUM_LEDS);
+  FastLED.setBrightness(BRIGHTNESS);
+  fill_solid(leds, NUM_LEDS, CRGB::Black);
+  FastLED.show();
 
   Serial.begin(115200);
   delay(10);
@@ -13,7 +23,7 @@ void setup() {
   Serial.println();
   Serial.print("Connecting to "); Serial.println(ssid);
 
-  WiFi.begin(ssid, password);  
+  WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
@@ -25,26 +35,28 @@ void setup() {
   Serial.println(WiFi.localIP());
 
   server.begin();
+  MDNS.begin("lantern");
 }
 
-void loop() 
+void loop()
 {
   NetworkClient client = server.accept();
-  
+
   if (client) //if new client
-  {                     
-    Serial.println("New Client.");  
-    String currentLine = "";       
+  {
+    Serial.println("New Client.");
+    String currentLine = "";
     unsigned long timeout = millis();
-    while (client.connected() && millis() - timeout <800) // loop if client's connected, 2s timeout
-    {   
-      if (client.available()) 
-      {   
-        timeout = millis();  // reset timeout on data
+
+    while (client.connected() && millis() - timeout < 800) // loop if client's connected, 2s timeout
+    {
+      if (client.available())
+      {
+        timeout = millis(); // reset timeout on data
         char c = client.read();
-                                           
-        if (c == '\n') 
-        {    
+
+        if (c == '\n')
+        {
           if (currentLine.length() == 0)
           {
             client.println("HTTP/1.1 200 OK");
@@ -59,22 +71,32 @@ void loop()
             client.print("input[type=range]{width:200px;accent-color:#fff}");
             client.print("</style></head><body>");
             client.print("<button onclick=\"fetch('/on')\">On</button><button onclick=\"fetch('/off')\">Off</button>");
-            client.print("<input type=range><input type=range>");
+            client.print("<input type=range min=0 max=255 value=128 oninput=\"fetch('/brightness?v='+this.value)\">");
             client.print("</body></html>");
 
             client.println(); break; //exits client connected loop
-          } 
+          }
           else currentLine = "";
-        } 
+        }
         else if (c != '\r') currentLine += c;
 
         //button functions
-        if (currentLine.endsWith("/on")) digitalWrite(4, HIGH);
-        if (currentLine.endsWith("/off")) digitalWrite(4, LOW);
+        if (currentLine.endsWith("/on")) { 
+          fill_solid(leds, NUM_LEDS, CRGB::White); 
+          FastLED.show(); 
+          }
+        if (currentLine.endsWith("/off")) { fill_solid(leds, NUM_LEDS, CRGB::Black); FastLED.show(); }
 
+        //slider brightness
+        if (currentLine.indexOf("/brightness?v=") >= 0 && currentLine.endsWith(" HTTP/1.1")) {
+          int idx = currentLine.indexOf("?v=") + 3;
+          int val = currentLine.substring(idx).toInt();
+          FastLED.setBrightness(val);
+          FastLED.show();
+        }
       }
     }
-    
+
     // close the connection if client not connected
     client.stop();
     Serial.println("Client Disconnected.");
