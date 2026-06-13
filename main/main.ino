@@ -21,19 +21,15 @@ void sendOK(NetworkClient &client) {
 void setup() {
   FastLED.addLeds<WS2812B, DATA_PIN, GRB>(leds, NUM_LEDS);
   FastLED.setBrightness(BRIGHTNESS);
-  fill_solid(leds, NUM_LEDS, CRGB::Black);
   FastLED.show();
 
-  Serial.begin(115200);
   WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
-  Serial.println("\nConnected: " + WiFi.localIP().toString());
+  while (WiFi.status() != WL_CONNECTED) delay(500);
   server.begin();
   MDNS.begin("lantern");
 }
 
-void loop()
-{
+void loop() {
   NetworkClient client = server.accept();
   if (!client) return;
 
@@ -47,7 +43,6 @@ void loop()
 
     if (c == '\n') {
       if (currentLine.length() == 0) {
-        // serve HTML only for root
         client.println("HTTP/1.1 200 OK");
         client.println("Content-type:text/html");
         client.println("Connection: close");
@@ -123,7 +118,7 @@ const PRESETS=[
   {label:'Day',K:'6500K',r:201,g:218,b:255}
 ];
 let powered=false,dragging=false;
-let pendingColor=null,colorTimer=null,sending=false;
+let pendingColor=null,sending=false;
 
 function togglePower(){
   powered=!powered;
@@ -145,10 +140,7 @@ function sendColor(r,g,b){
     .catch(()=>{})
     .finally(()=>{
       sending=false;
-      if(pendingColor){
-        const c=pendingColor;pendingColor=null;
-        sendColor(c.r,c.g,c.b);
-      }
+      if(pendingColor){const c=pendingColor;pendingColor=null;sendColor(c.r,c.g,c.b);}
     });
 }
 
@@ -218,12 +210,12 @@ drawWheel();buildPresets();
       currentLine += c;
 
       if (currentLine.endsWith("/on")) {
-        fill_solid(leds, NUM_LEDS, CRGB::White);
+        FastLED.setBrightness(BRIGHTNESS);
         FastLED.show();
         sendOK(client); break;
       }
       if (currentLine.endsWith("/off")) {
-        fill_solid(leds, NUM_LEDS, CRGB::Black);
+        FastLED.setBrightness(0);
         FastLED.show();
         sendOK(client); break;
       }
