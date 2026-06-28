@@ -2,14 +2,24 @@
 #include <ESPmDNS.h>
 #include <FastLED.h>
 
-#define NUM_LEDS   25
-#define DATA_PIN   4
-#define BRIGHTNESS 128
+#define NUM_LEDS  25
+#define DATA_PIN  4
+#define PIN_UP    21
+#define PIN_DOWN  20
 
-const char *ssid = "Net4me";
+const char *ssid     = "Net4me";
 const char *password = "brousovaubych";
 NetworkServer server(80);
 CRGB leds[NUM_LEDS];
+
+int  brightnessLevel = 3;
+int  curR = 255, curG = 255, curB = 255;
+const uint8_t LEVELS[6] = {0, 51, 102, 153, 204, 255};
+
+void applyBrightness() {
+  FastLED.setBrightness(LEVELS[brightnessLevel]);
+  FastLED.show();
+}
 
 void sendOK(NetworkClient &client) {
   client.println("HTTP/1.1 200 OK");
@@ -18,10 +28,26 @@ void sendOK(NetworkClient &client) {
   client.println();
 }
 
+void sendState(NetworkClient &client) {
+  String json = "{\"brightness\":" + String(LEVELS[brightnessLevel]) +
+                ",\"level\":"      + String(brightnessLevel) +
+                ",\"r\":"          + String(curR) +
+                ",\"g\":"          + String(curG) +
+                ",\"b\":"          + String(curB) + "}";
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-Type: application/json");
+  client.println("Connection: close");
+  client.println();
+  client.print(json);
+}
+
 void setup() {
+  pinMode(PIN_UP,   INPUT);
+  pinMode(PIN_DOWN, INPUT);
+
   FastLED.addLeds<WS2812B, DATA_PIN, GRB>(leds, NUM_LEDS);
-  FastLED.setBrightness(BRIGHTNESS);
-  FastLED.show();
+  fill_solid(leds, NUM_LEDS, CRGB(curR, curG, curB));
+  applyBrightness();
 
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) delay(500);
@@ -29,7 +55,32 @@ void setup() {
   MDNS.begin("lantern");
 }
 
+unsigned long lastUpTime   = 0;
+unsigned long lastDownTime = 0;
+bool lastUpState   = LOW;
+bool lastDownState = LOW;
+const unsigned long DEBOUNCE = 300;
+
+void handleTouch() {
+  unsigned long now = millis();
+  bool upState   = digitalRead(PIN_UP);
+  bool downState = digitalRead(PIN_DOWN);
+
+  if (upState == HIGH && lastUpState == LOW && now - lastUpTime > DEBOUNCE) {
+    lastUpTime = now;
+    if (brightnessLevel < 5) { brightnessLevel++; applyBrightness(); }
+  }
+  if (downState == HIGH && lastDownState == LOW && now - lastDownTime > DEBOUNCE) {
+    lastDownTime = now;
+    if (brightnessLevel > 0) { brightnessLevel--; applyBrightness(); }
+  }
+  lastUpState   = upState;
+  lastDownState = downState;
+}
+
 void loop() {
+  handleTouch();
+
   NetworkClient client = server.accept();
   if (!client) return;
 
@@ -37,7 +88,7 @@ void loop() {
   unsigned long timeout = millis();
 
   while (client.connected() && millis() - timeout < 800) {
-    if (!client.available()) continue;
+    if (!client.available()) { handleTouch(); continue; }
     timeout = millis();
     char c = client.read();
 
@@ -65,9 +116,6 @@ body{background:#111;font-family:sans-serif;display:flex;justify-content:center;
 .toggle-thumb{width:22px;height:22px;border-radius:50%;background:#fff;position:absolute;top:3px;left:3px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.4)}
 .toggle-track.on .toggle-thumb{left:27px}
 .device-name{font-size:16px;font-weight:500;color:#eee}
-.slider-row{display:flex;align-items:center;gap:10px}
-.slider-row input[type=range]{flex:1;accent-color:#fff;cursor:pointer}
-.slider-val{font-size:13px;color:#888;min-width:30px;text-align:right}
 .wheel-wrap{display:flex;justify-content:center;padding:.5rem 0}
 canvas{border-radius:50%;cursor:crosshair;display:block;touch-action:none}
 .preview{width:100%;height:44px;border-radius:10px;border:1px solid #2e2e2e;margin-top:.75rem;transition:background .1s}
@@ -77,6 +125,12 @@ canvas{border-radius:50%;cursor:crosshair;display:block;touch-action:none}
 .preset-btn.active{border:2px solid #aaa}
 .preset-dot{width:16px;height:16px;border-radius:50%}
 .preset-label{font-size:10px;color:#888;text-align:center;line-height:1.3}
+.bright-ctrl{display:flex;flex-direction:column;align-items:center;gap:.5rem}
+.bright-btn{width:100%;padding:.75rem;background:#2a2a2a;border:1px solid #2e2e2e;border-radius:10px;color:#eee;font-size:20px;cursor:pointer;transition:background .15s}
+.bright-btn:active{background:#3a3a3a}
+.bright-btn:disabled{opacity:.25;cursor:default}
+.bright-display{font-size:15px;color:#eee;font-weight:500}
+.bright-sub{font-size:11px;color:#555}
 </style>
 </head>
 <body>
@@ -91,10 +145,13 @@ canvas{border-radius:50%;cursor:crosshair;display:block;touch-action:none}
   </div>
   <div class="card">
     <div class="sec-title">Brightness</div>
-    <div class="slider-row">
-      <span style="font-size:13px;color:#888">&#9788;</span>
-      <input type="range" min="0" max="255" value="128" id="brightness" oninput="onBrightness(this.value)">
-      <span style="font-size:13px;color:#888;min-width:30px;text-align:right" id="bval">50%</span>
+    <div class="bright-ctrl">
+      <button class="bright-btn" id="btn-up" onclick="stepBrightness(1)">&#9650;</button>
+      <div style="text-align:center">
+        <div class="bright-display" id="blevel">3 / 5</div>
+        <div class="bright-sub" id="bpct">60%</div>
+      </div>
+      <button class="bright-btn" id="btn-down" onclick="stepBrightness(-1)">&#9660;</button>
     </div>
   </div>
   <div class="card">
@@ -117,20 +174,38 @@ const PRESETS=[
   {label:'Cool',K:'5500K',r:220,g:229,b:255},
   {label:'Day',K:'6500K',r:201,g:218,b:255}
 ];
-let powered=false,dragging=false;
-let pendingColor=null,sending=false;
+const LEVELS=[0,51,102,153,204,255];
+let dragging=false,pendingColor=null,sending=false;
+let curLevel=3;
 
-function togglePower(){
-  powered=!powered;
-  document.getElementById('toggle').classList.toggle('on',powered);
-  fetch(powered?'/on':'/off').catch(()=>{});
+function updateBrightUI(level){
+  curLevel=level;
+  document.getElementById('blevel').textContent=(level==0?'Off':level+' / 5');
+  document.getElementById('bpct').textContent=Math.round(LEVELS[level]/255*100)+'%';
+  document.getElementById('btn-up').disabled=level>=5;
+  document.getElementById('btn-down').disabled=level<=0;
+  document.getElementById('toggle').classList.toggle('on',level>0);
 }
 
-let bTimer=null;
-function onBrightness(v){
-  document.getElementById('bval').textContent=Math.round(v/255*100)+'%';
-  clearTimeout(bTimer);
-  bTimer=setTimeout(()=>fetch('/brightness?v='+v).catch(()=>{}),80);
+function pollState(){
+  fetch('/state').then(r=>r.json()).then(s=>{
+    updateBrightUI(s.level);
+    document.getElementById('preview').style.background='rgb('+s.r+','+s.g+','+s.b+')';
+  }).catch(()=>{});
+}
+setInterval(pollState,1500);
+pollState();
+
+function togglePower(){
+  const on=document.getElementById('toggle').classList.contains('on');
+  fetch(on?'/off':'/on').catch(()=>{});
+}
+
+function stepBrightness(dir){
+  const next=Math.min(5,Math.max(0,curLevel+dir));
+  if(next===curLevel)return;
+  updateBrightUI(next);
+  fetch('/brightness?v='+LEVELS[next]).catch(()=>{});
 }
 
 function sendColor(r,g,b){
@@ -210,32 +285,37 @@ drawWheel();buildPresets();
       currentLine += c;
 
       if (currentLine.endsWith("/on")) {
-        FastLED.setBrightness(BRIGHTNESS);
-        FastLED.show();
+        if (brightnessLevel == 0) brightnessLevel = 3;
+        applyBrightness();
         sendOK(client); break;
       }
       if (currentLine.endsWith("/off")) {
-        FastLED.setBrightness(0);
-        FastLED.show();
+        brightnessLevel = 0;
+        applyBrightness();
         sendOK(client); break;
       }
       if (currentLine.indexOf("/brightness?v=") >= 0 && currentLine.endsWith(" HTTP/1.1")) {
-        int idx = currentLine.indexOf("?v=") + 3;
-        int val = currentLine.substring(idx).toInt();
-        FastLED.setBrightness(val);
-        FastLED.show();
+        int val = currentLine.substring(currentLine.indexOf("?v=") + 3).toInt();
+        int best = 0;
+        for (int i = 1; i < 6; i++)
+          if (abs(val - LEVELS[i]) < abs(val - LEVELS[best])) best = i;
+        brightnessLevel = best;
+        applyBrightness();
         sendOK(client); break;
       }
       if (currentLine.indexOf("/color?r=") >= 0 && currentLine.endsWith(" HTTP/1.1")) {
         int ampG = currentLine.indexOf("&g=");
         int ampB = currentLine.indexOf("&b=");
         int spH  = currentLine.indexOf(" HTTP/1.1");
-        int r = currentLine.substring(currentLine.indexOf("r=") + 2, ampG).toInt();
-        int g = currentLine.substring(ampG + 3, ampB).toInt();
-        int b = currentLine.substring(ampB + 3, spH).toInt();
-        fill_solid(leds, NUM_LEDS, CRGB(r, g, b));
+        curR = currentLine.substring(currentLine.indexOf("r=") + 2, ampG).toInt();
+        curG = currentLine.substring(ampG + 3, ampB).toInt();
+        curB = currentLine.substring(ampB + 3, spH).toInt();
+        fill_solid(leds, NUM_LEDS, CRGB(curR, curG, curB));
         FastLED.show();
         sendOK(client); break;
+      }
+      if (currentLine.indexOf("/state") >= 0 && currentLine.endsWith(" HTTP/1.1")) {
+        sendState(client); break;
       }
     }
   }
