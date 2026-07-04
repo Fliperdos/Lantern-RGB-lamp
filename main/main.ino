@@ -3,9 +3,8 @@
 #include <FastLED.h>
 
 #define NUM_LEDS  25
-#define DATA_PIN  4
-#define PIN_UP    21
-#define PIN_DOWN  20
+#define DATA_PIN  21
+#define PIN_BTN   4
 
 const char *ssid     = "Net4me";
 const char *password = "brousovaubych";
@@ -41,41 +40,35 @@ void sendState(NetworkClient &client) {
   client.print(json);
 }
 
+unsigned long lastBtnTime = 0;
+bool lastBtnState = LOW;
+const unsigned long DEBOUNCE = 300;
+
+void handleTouch() {
+  unsigned long now = millis();
+  bool btnState = digitalRead(PIN_BTN);
+
+  if (btnState == HIGH && lastBtnState == LOW && now - lastBtnTime > DEBOUNCE) {
+    lastBtnTime = now;
+    brightnessLevel = (brightnessLevel + 1) % 6;
+    applyBrightness();
+  }
+  lastBtnState = btnState;
+}
+
 void setup() {
-  pinMode(PIN_UP,   INPUT);
-  pinMode(PIN_DOWN, INPUT);
+  pinMode(PIN_BTN, INPUT);
 
   FastLED.addLeds<WS2812B, DATA_PIN, GRB>(leds, NUM_LEDS);
   fill_solid(leds, NUM_LEDS, CRGB(curR, curG, curB));
   applyBrightness();
 
   WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) delay(500);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+  }
   server.begin();
   MDNS.begin("lantern");
-}
-
-unsigned long lastUpTime   = 0;
-unsigned long lastDownTime = 0;
-bool lastUpState   = LOW;
-bool lastDownState = LOW;
-const unsigned long DEBOUNCE = 300;
-
-void handleTouch() {
-  unsigned long now = millis();
-  bool upState   = digitalRead(PIN_UP);
-  bool downState = digitalRead(PIN_DOWN);
-
-  if (upState == HIGH && lastUpState == LOW && now - lastUpTime > DEBOUNCE) {
-    lastUpTime = now;
-    if (brightnessLevel < 5) { brightnessLevel++; applyBrightness(); }
-  }
-  if (downState == HIGH && lastDownState == LOW && now - lastDownTime > DEBOUNCE) {
-    lastDownTime = now;
-    if (brightnessLevel > 0) { brightnessLevel--; applyBrightness(); }
-  }
-  lastUpState   = upState;
-  lastDownState = downState;
 }
 
 void loop() {
