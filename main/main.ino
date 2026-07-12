@@ -56,17 +56,33 @@ void handleTouch() {
   lastBtnState = btnState;
 }
 
+void connectWiFi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.setTxPower(WIFI_POWER_8_5dBm);   // cuts radio current spikes, prevents dips on weak supplies
+  WiFi.begin(ssid, password);
+
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED) {
+    handleTouch();       // keeps button responsive during connect, unlike blocking delay-only loop
+    delay(20);
+    if (millis() - start > 15000) {   // avoid infinite hang on bad network
+      WiFi.disconnect();
+      delay(200);
+      WiFi.begin(ssid, password);
+      start = millis();
+    }
+  }
+}
+
 void setup() {
   pinMode(PIN_BTN, INPUT);
 
   FastLED.addLeds<WS2812B, DATA_PIN, GRB>(leds, NUM_LEDS);
+  FastLED.setMaxPowerInVoltsAndMilliamps(5, 1000); // caps LED draw, prevents brownout on power-only USB-C sources
   fill_solid(leds, NUM_LEDS, CRGB(curR, curG, curB));
   applyBrightness();
 
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-  }
+  connectWiFi();
   server.begin();
   MDNS.begin("lantern");
 }
