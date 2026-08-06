@@ -6,8 +6,8 @@
 #define DATA_PIN  21
 #define PIN_BTN   4
 
-const char *ssid     = "Net4me";
-const char *password = "brousovaubych";
+const char *ssid     = "wifi name";
+const char *password = "wifi password";
 NetworkServer server(80);
 CRGB leds[NUM_LEDS];
 
