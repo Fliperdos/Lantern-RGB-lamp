@@ -2,12 +2,16 @@
 #include <ESPmDNS.h>
 #include <FastLED.h>
 
+#if __has_include("wifi_secrets.h")
+#include "wifi_secrets.h"
+#else
+#include "wifi_secrets.example.h"
+#endif
+
 #define NUM_LEDS  25
 #define DATA_PIN  21
 #define PIN_BTN   4
 
-const char *ssid     = "wifi name";
-const char *password = "wifi password";
 NetworkServer server(80);
 CRGB leds[NUM_LEDS];
 
@@ -59,7 +63,7 @@ void handleTouch() {
 void connectWiFi() {
   WiFi.mode(WIFI_STA);
   WiFi.setTxPower(WIFI_POWER_8_5dBm);   // cuts radio current spikes, prevents dips on weak supplies
-  WiFi.begin(ssid, password);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
   unsigned long start = millis();
   while (WiFi.status() != WL_CONNECTED) {
@@ -68,7 +72,7 @@ void connectWiFi() {
     if (millis() - start > 15000) {   // avoid infinite hang on bad network
       WiFi.disconnect();
       delay(200);
-      WiFi.begin(ssid, password);
+      WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
       start = millis();
     }
   }
